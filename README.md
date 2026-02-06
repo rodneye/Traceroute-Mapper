@@ -44,3 +44,5 @@ streamlit run app.py
 ## Environment
 - `IPINFO_TOKEN`: optional. If set, it is used by both the CLI and Streamlit app.
 
+## License
+MIT. See `LICENSE`.
