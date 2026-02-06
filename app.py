@@ -32,20 +32,25 @@ PALETTE = [
     [102, 102, 102],
 ]
 
-GRAYSCALE_PALETTE = [
-    [30, 30, 30],
-    [60, 60, 60],
-    [90, 90, 90],
-    [120, 120, 120],
-    [150, 150, 150],
-    [180, 180, 180],
-    [210, 210, 210],
-    [240, 240, 240],
-]
+GRAYSCALE_BASE = [20, 40, 60, 80, 100, 120, 140, 160]
 
 
-def build_color_map(destinations: List[str], grayscale: bool) -> Dict[str, List[int]]:
-    palette = GRAYSCALE_PALETTE if grayscale else PALETTE
+def make_grayscale_palette(level: int) -> List[List[int]]:
+    # level: 0 (dark) -> 100 (light)
+    offset = int((level - 50) * 1.6)
+    palette = []
+    for base in GRAYSCALE_BASE:
+        value = max(0, min(230, base + offset))
+        palette.append([value, value, value])
+    return palette
+
+
+def build_color_map(
+    destinations: List[str],
+    grayscale: bool,
+    grayscale_level: int,
+) -> Dict[str, List[int]]:
+    palette = make_grayscale_palette(grayscale_level) if grayscale else PALETTE
     return {dest: palette[i % len(palette)] for i, dest in enumerate(destinations)}
 
 
@@ -101,7 +106,16 @@ def render_legend_filter(
 
 
 
-def build_map(df: pd.DataFrame, color_map: Dict[str, List[int]], show_hop_numbers: bool):
+def build_map(
+    df: pd.DataFrame,
+    color_map: Dict[str, List[int]],
+    show_hop_numbers: bool,
+    map_style: str,
+    monochrome: bool,
+    outline_color: List[int],
+    line_width_scale: int,
+    line_width_min: int,
+):
     if df.empty:
         st.info("No geolocated hops to map.")
         return
@@ -131,8 +145,10 @@ def build_map(df: pd.DataFrame, color_map: Dict[str, List[int]], show_hop_number
         data=df,
         get_position="[lon, lat]",
         get_color="color",
-        get_radius=25000,
-        radius_min_pixels=3,
+        get_radius=30000,
+        radius_min_pixels=4,
+        get_line_color=outline_color,
+        line_width_min_pixels=1,
         pickable=True,
     )
 
@@ -155,13 +171,14 @@ def build_map(df: pd.DataFrame, color_map: Dict[str, List[int]], show_hop_number
         layers.append(text)
 
     if paths:
+        path_color = [0, 0, 0] if monochrome else "color"
         path_layer = pdk.Layer(
             "PathLayer",
             data=paths,
             get_path="path",
-            get_color="color",
-            width_scale=20,
-            width_min_pixels=2,
+            get_color=path_color,
+            width_scale=line_width_scale,
+            width_min_pixels=line_width_min,
             pickable=False,
         )
         layers.append(path_layer)
@@ -184,7 +201,14 @@ def build_map(df: pd.DataFrame, color_map: Dict[str, List[int]], show_hop_number
         "style": {"backgroundColor": "steelblue", "color": "white"},
     }
 
-    st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=view_state, tooltip=tooltip))
+    st.pydeck_chart(
+        pdk.Deck(
+            layers=layers,
+            initial_view_state=view_state,
+            tooltip=tooltip,
+            map_style=map_style,
+        )
+    )
 
 
 st.set_page_config(page_title="Traceroute Mapper", layout="wide")
@@ -205,6 +229,23 @@ with st.sidebar:
         type="password",
     )
     grayscale = st.checkbox("Grayscale map", value=False)
+    map_style_label = st.selectbox(
+        "Map style",
+        ["Light", "Dark", "Monochrome"],
+        index=0,
+    )
+    grayscale_level = st.slider(
+        "Grayscale brightness",
+        min_value=0,
+        max_value=100,
+        value=40,
+    )
+    line_thickness = st.slider(
+        "Route thickness (px)",
+        min_value=1,
+        max_value=10,
+        value=4,
+    )
     run = st.button("Run traceroute")
 
 st.caption("Note: Setting a source IP may require root privileges on Linux.")
@@ -240,7 +281,12 @@ df = st.session_state.get("df", pd.DataFrame())
 
 if not df.empty:
     destinations = sorted(df["destination"].unique())
-    color_map = build_color_map(destinations, grayscale=grayscale)
+    monochrome = grayscale or map_style_label == "Monochrome"
+    color_map = build_color_map(
+        destinations,
+        grayscale=monochrome,
+        grayscale_level=grayscale_level,
+    )
     show_hop_numbers = False
     rtt_num = pd.to_numeric(df["rtt_ms"], errors="coerce")
     totals = (
@@ -269,4 +315,21 @@ if not df.empty:
 
         with map_container:
             st.subheader("Map")
-            build_map(filtered, color_map=color_map, show_hop_numbers=show_hop_numbers)
+            style_map = {
+                "Light": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+                "Dark": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+                "Monochrome": "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+            }
+            outline_color = [0, 0, 0] if map_style_label != "Dark" else [255, 255, 255]
+            line_width_min = int(line_thickness)
+            line_width_scale = max(10, int(line_thickness) * 10)
+            build_map(
+                filtered,
+                color_map=color_map,
+                show_hop_numbers=show_hop_numbers,
+                map_style=style_map.get(map_style_label, style_map["Light"]),
+                monochrome=monochrome,
+                outline_color=outline_color,
+                line_width_scale=line_width_scale,
+                line_width_min=line_width_min,
+            )
