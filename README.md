@@ -8,6 +8,7 @@ CLI + Streamlit app that runs traceroute to multiple destination IPs, geolocates
   - Debian/Ubuntu: `sudo apt-get install traceroute`
 - Python 3.9+
 - Optional: IPinfo token (set `IPINFO_TOKEN` env var) for higher rate limits
+- https://ipinfo.io/developers
 
 ## Install
 ```bash
@@ -43,16 +44,3 @@ streamlit run app.py
 ## Environment
 - `IPINFO_TOKEN`: optional. If set, it is used by both the CLI and Streamlit app.
 
-
-## Canada
-- Toronto: 138.199.57.129
-- Montréal: 79.127.177.1
-- Vancouver: 79.127.233.65
-
-## Europe
-- eu-west (Dublin): 87.249.137.8
-- eu-central (Frankfurt): 185.102.219.93
-
-- Johannesburg: 169.150.238.161
-- London: 185.59.221.51
-- Sydney: 143.244.63.144
