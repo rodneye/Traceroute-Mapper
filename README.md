@@ -34,6 +34,10 @@ Notes:
 streamlit run app.py
 ```
 
+UI controls:
+- Grayscale map toggle for hop colors.
+- Legend lets you filter destinations and shows total RTT per destination.
+
 ## Screenshots
 ![Streamlit UI - table view](screenshots/image1.png)
 ![Streamlit UI - map view](screenshots/image2.png)

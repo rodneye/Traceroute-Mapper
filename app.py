@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import Dict, List
 
 import pandas as pd
 import pydeck as pdk
@@ -14,12 +14,100 @@ def parse_targets(value: str) -> List[str]:
     return [t.strip() for t in value.split(",") if t.strip()]
 
 
-def build_map(df: pd.DataFrame):
+def render_dataframe(df: pd.DataFrame) -> None:
+    try:
+        st.dataframe(df, width="stretch")
+    except TypeError:
+        st.dataframe(df, use_container_width=True)
+
+
+PALETTE = [
+    [27, 158, 119],
+    [217, 95, 2],
+    [117, 112, 179],
+    [231, 41, 138],
+    [102, 166, 30],
+    [230, 171, 2],
+    [166, 118, 29],
+    [102, 102, 102],
+]
+
+GRAYSCALE_PALETTE = [
+    [30, 30, 30],
+    [60, 60, 60],
+    [90, 90, 90],
+    [120, 120, 120],
+    [150, 150, 150],
+    [180, 180, 180],
+    [210, 210, 210],
+    [240, 240, 240],
+]
+
+
+def build_color_map(destinations: List[str], grayscale: bool) -> Dict[str, List[int]]:
+    palette = GRAYSCALE_PALETTE if grayscale else PALETTE
+    return {dest: palette[i % len(palette)] for i, dest in enumerate(destinations)}
+
+
+def format_total_rtt(value: float) -> str:
+    if pd.isna(value):
+        return "N/A"
+    return f"{value:.1f} ms"
+
+
+def render_legend_filter(
+    destinations: List[str],
+    color_map: Dict[str, List[int]],
+    totals: Dict[str, float],
+):
+    if not destinations:
+        return []
+
+    count = len(destinations)
+    if count >= 9:
+        cols_per_row = 3
+    elif count >= 5:
+        cols_per_row = 2
+    else:
+        cols_per_row = 1
+
+    selected: List[str] = []
+    for start in range(0, count, cols_per_row):
+        row_items = destinations[start : start + cols_per_row]
+        row_cols = st.columns(cols_per_row)
+        for col, dest in zip(row_cols, row_items):
+            with col:
+                color = color_map[dest]
+                rtt_label = format_total_rtt(totals.get(dest, float("nan")))
+                item_cols = st.columns([0.12, 0.88])
+                with item_cols[0]:
+                    st.markdown(
+                        '<div style="width:12px;height:12px;'
+                        f'background-color: rgb({color[0]}, {color[1]}, {color[2]});'
+                        'border-radius:2px;margin-top:6px;"></div>',
+                        unsafe_allow_html=True,
+                    )
+                with item_cols[1]:
+                    label = f"{dest} (total rtt {rtt_label})"
+                    key = f"legend_{dest}"
+                    if key in st.session_state:
+                        checked = st.checkbox(label, key=key)
+                    else:
+                        checked = st.checkbox(label, value=True, key=key)
+                if checked:
+                    selected.append(dest)
+
+    return selected
+
+
+
+def build_map(df: pd.DataFrame, color_map: Dict[str, List[int]], show_hop_numbers: bool):
     if df.empty:
         st.info("No geolocated hops to map.")
         return
 
     df = df.copy()
+    df["hop_label"] = df["hop"].apply(lambda v: "" if pd.isna(v) else str(int(v)))
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
     df = df.dropna(subset=["lat", "lon"])
@@ -29,17 +117,6 @@ def build_map(df: pd.DataFrame):
         return
 
     destinations = sorted(df["destination"].unique())
-    palette = [
-        [27, 158, 119],
-        [217, 95, 2],
-        [117, 112, 179],
-        [231, 41, 138],
-        [102, 166, 30],
-        [230, 171, 2],
-        [166, 118, 29],
-        [102, 102, 102],
-    ]
-    color_map = {dest: palette[i % len(palette)] for i, dest in enumerate(destinations)}
     df["color"] = df["destination"].map(color_map)
 
     paths = []
@@ -61,6 +138,22 @@ def build_map(df: pd.DataFrame):
 
     layers = [scatter]
 
+    if show_hop_numbers:
+        text = pdk.Layer(
+            "TextLayer",
+            data=df,
+            get_position="[lon, lat]",
+            get_text="hop_label",
+            get_color=[0, 0, 0, 220],
+            get_size=12,
+            size_min_pixels=12,
+            size_max_pixels=24,
+            billboard=True,
+            get_text_anchor="start",
+            get_alignment_baseline="bottom",
+        )
+        layers.append(text)
+
     if paths:
         path_layer = pdk.Layer(
             "PathLayer",
@@ -80,7 +173,14 @@ def build_map(df: pd.DataFrame):
     )
 
     tooltip = {
-        "html": "<b>{ip}</b><br/>Hop {hop}<br/>{city} {region} {country}",
+        "html": (
+            "<b>{ip}</b><br/>"
+            "Hop {hop}<br/>"
+            "Latency: {rtt_ms} ms<br/>"
+            "Reachable: {reachable}<br/>"
+            "{city} {region} {country}<br/>"
+            "{org}"
+        ),
         "style": {"backgroundColor": "steelblue", "color": "white"},
     }
 
@@ -104,6 +204,7 @@ with st.sidebar:
         os.environ.get("IPINFO_TOKEN", ""),
         type="password",
     )
+    grayscale = st.checkbox("Grayscale map", value=False)
     run = st.button("Run traceroute")
 
 st.caption("Note: Setting a source IP may require root privileges on Linux.")
@@ -133,9 +234,39 @@ if run:
             st.exception(exc)
             df = pd.DataFrame()
 
-        if not df.empty:
-            st.subheader("Hop Data")
-            st.dataframe(df, width="stretch")
+        st.session_state["df"] = df
 
+df = st.session_state.get("df", pd.DataFrame())
+
+if not df.empty:
+    destinations = sorted(df["destination"].unique())
+    color_map = build_color_map(destinations, grayscale=grayscale)
+    show_hop_numbers = False
+    rtt_num = pd.to_numeric(df["rtt_ms"], errors="coerce")
+    totals = (
+        df.assign(rtt_num=rtt_num)
+        .groupby("destination")["rtt_num"]
+        .sum(min_count=1)
+        .to_dict()
+    )
+    hop_container = st.container()
+    legend_container = st.container()
+    map_container = st.container()
+
+    with legend_container:
+        st.subheader("Legend")
+        selected_destinations = render_legend_filter(destinations, color_map, totals)
+
+    filtered = df[df["destination"].isin(selected_destinations)].copy()
+
+    if filtered.empty:
+        with map_container:
+            st.info("No destinations selected.")
+    else:
+        with hop_container:
+            st.subheader("Hop Data")
+            render_dataframe(filtered)
+
+        with map_container:
             st.subheader("Map")
-            build_map(df)
+            build_map(filtered, color_map=color_map, show_hop_numbers=show_hop_numbers)
