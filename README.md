@@ -33,6 +33,10 @@ Notes:
 streamlit run app.py
 ```
 
+## Screenshots
+![Streamlit UI - table view](screenshots/image1.png)
+![Streamlit UI - map view](screenshots/image2.png)
+
 ## Output CSV columns
 - `destination`, `hop`, `ip`, `rtt_ms`, `reachable`, `city`, `region`, `country`, `lat`, `lon`, `org`
 
