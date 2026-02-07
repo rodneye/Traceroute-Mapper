@@ -105,8 +105,7 @@ def render_legend_filter(
     return selected
 
 
-
-def build_map(
+def build_deck(
     df: pd.DataFrame,
     color_map: Dict[str, List[int]],
     show_hop_numbers: bool,
@@ -115,10 +114,10 @@ def build_map(
     outline_color: List[int],
     line_width_scale: int,
     line_width_min: int,
-):
+) -> pdk.Deck | None:
     if df.empty:
         st.info("No geolocated hops to map.")
-        return
+        return None
 
     df = df.copy()
     df["hop_label"] = df["hop"].apply(lambda v: "" if pd.isna(v) else str(int(v)))
@@ -128,7 +127,7 @@ def build_map(
 
     if df.empty:
         st.info("No geolocated hops to map.")
-        return
+        return None
 
     destinations = sorted(df["destination"].unique())
     df["color"] = df["destination"].map(color_map)
@@ -201,14 +200,19 @@ def build_map(
         "style": {"backgroundColor": "steelblue", "color": "white"},
     }
 
-    st.pydeck_chart(
-        pdk.Deck(
-            layers=layers,
-            initial_view_state=view_state,
-            tooltip=tooltip,
-            map_style=map_style,
-        )
+    return pdk.Deck(
+        layers=layers,
+        initial_view_state=view_state,
+        tooltip=tooltip,
+        map_style=map_style,
     )
+
+
+def render_map(deck: pdk.Deck | None) -> None:
+    if deck is None:
+        st.info("No geolocated hops to map.")
+        return
+    st.pydeck_chart(deck)
 
 
 st.set_page_config(page_title="Traceroute Mapper", layout="wide")
@@ -244,7 +248,7 @@ with st.sidebar:
         "Route thickness (px)",
         min_value=1,
         max_value=10,
-        value=4,
+        value=2,
     )
     run = st.button("Run traceroute")
 
@@ -323,7 +327,7 @@ if not df.empty:
             outline_color = [0, 0, 0] if map_style_label != "Dark" else [255, 255, 255]
             line_width_min = int(line_thickness)
             line_width_scale = max(10, int(line_thickness) * 10)
-            build_map(
+            deck = build_deck(
                 filtered,
                 color_map=color_map,
                 show_hop_numbers=show_hop_numbers,
@@ -333,3 +337,4 @@ if not df.empty:
                 line_width_scale=line_width_scale,
                 line_width_min=line_width_min,
             )
+            render_map(deck)

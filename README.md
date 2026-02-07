@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ```bash
 python tracert_mapper.py \
   --targets "8.8.8.8,1.1.1.1" \
-  --source "192.168.88.1" \
+  --source "192.168.0.1" \
   --out-csv traceroute.csv
 ```
 
